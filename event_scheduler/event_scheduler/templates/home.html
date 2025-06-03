@@ -1,0 +1,20 @@
+{% extends "base.html" %}
+
+{% block title %}Welcome to Event Scheduler{% endblock %}
+
+{% block content %}
+<div class="container mt-5">
+    <div class="jumbotron text-center">
+        <h1 class="display-4">Welcome to Event Scheduler</h1>
+        <p class="lead">Manage your events with ease</p>
+        <hr class="my-4">
+        {% if user.is_authenticated %}
+            <a class="btn btn-primary btn-lg" href="{% url 'event-list' %}" role="button">View Events</a>
+            <a class="btn btn-outline-secondary btn-lg" href="{% url 'event-calendar' %}" role="button">View Calendar</a>
+        {% else %}
+            <a class="btn btn-primary btn-lg" href="{% url 'login' %}" role="button">Login</a>
+            <a class="btn btn-outline-secondary btn-lg" href="{% url 'signup' %}" role="button">Sign Up</a>
+        {% endif %}
+    </div>
+</div>
+{% endblock %}

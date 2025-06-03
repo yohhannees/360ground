@@ -1,0 +1,190 @@
+{% extends 'base.html' %}
+
+{% block title %}{% if form.instance.id %}Edit{% else %}Create{% endif %} Event - Event Scheduler{% endblock %}
+
+{% block extra_css %}
+<link href="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/css/select2.min.css" rel="stylesheet" />
+<style>
+    .form-container {
+        max-width: 800px;
+        margin: 0 auto;
+        padding: 20px;
+    }
+    .recurrence-options {
+        margin-top: 20px;
+        padding: 15px;
+        border: 1px solid #dee2e6;
+        border-radius: 5px;
+        display: none;
+    }
+    .select2-container {
+        width: 100% !important;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="form-container">
+    <h2 class="mb-4">{% if form.instance.id %}Edit{% else %}Create New{% endif %} Event</h2>
+    
+    <form method="post" id="eventForm">
+        {% csrf_token %}
+        
+        <div class="mb-3">
+            <label for="id_title" class="form-label">Title *</label>
+            {{ form.title }}
+            {% if form.title.errors %}
+                <div class="text-danger">{{ form.title.errors }}</div>
+            {% endif %}
+        </div>
+        
+        <div class="row">
+            <div class="col-md-6 mb-3">
+                <label for="id_start_time" class="form-label">Start Time *</label>
+                <input type="datetime-local" name="start_time" class="form-control" id="id_start_time" 
+                       value="{{ form.start_time.value|date:'Y-m-d\TH:i' }}" required>
+                {% if form.start_time.errors %}
+                    <div class="text-danger">{{ form.start_time.errors }}</div>
+                {% endif %}
+            </div>
+            
+            <div class="col-md-6 mb-3">
+                <label for="id_end_time" class="form-label">End Time *</label>
+                <input type="datetime-local" name="end_time" class="form-control" id="id_end_time" 
+                       value="{{ form.end_time.value|date:'Y-m-d\TH:i' }}" required>
+                {% if form.end_time.errors %}
+                    <div class="text-danger">{{ form.end_time.errors }}</div>
+                {% endif %}
+            </div>
+        </div>
+        
+        <div class="mb-3">
+            <label for="id_description" class="form-label">Description</label>
+            {{ form.description }}
+            {% if form.description.errors %}
+                <div class="text-danger">{{ form.description.errors }}</div>
+            {% endif %}
+        </div>
+        
+        <div class="form-check mb-3">
+            <input class="form-check-input" type="checkbox" id="is_recurring">
+            <label class="form-check-label" for="is_recurring">
+                This is a recurring event
+            </label>
+        </div>
+        
+        <div id="recurrenceOptions" class="recurrence-options">
+            <h5>Recurrence Options</h5>
+            <div class="row">
+                <div class="col-md-6 mb-3">
+                    <label for="id_frequency" class="form-label">Frequency</label>
+                    {{ form.frequency }}
+                </div>
+                <div class="col-md-6 mb-3">
+                    <label for="id_interval" class="form-label">Interval</label>
+                    {{ form.interval }}
+                </div>
+            </div>
+            
+            <div class="row" id="weeklyOptions" style="display: none;">
+                <div class="col-12 mb-3">
+                    <label class="form-label">Repeat on</label>
+                    <div class="d-flex flex-wrap">
+                        {% for value, label in form.week_days.field.choices %}
+                            <div class="form-check me-3">
+                                <input class="form-check-input" type="checkbox" name="week_days" 
+                                       value="{{ value }}" id="day_{{ forloop.counter0 }}"
+                                       {% if value in form.week_days.value %}checked{% endif %}>
+                                <label class="form-check-label" for="day_{{ forloop.counter0 }}">
+                                    {{ label }}
+                                </label>
+                            </div>
+                        {% endfor %}
+                    </div>
+                </div>
+            </div>
+            
+            <div class="row">
+                <div class="col-md-6 mb-3">
+                    <label for="id_until" class="form-label">End Date (Optional)</label>
+                    <input type="date" name="until" class="form-control" id="id_until" 
+                           value="{{ form.until.value|date:'Y-m-d' }}">
+                </div>
+            </div>
+        </div>
+        
+        <div class="d-grid gap-2 d-md-flex justify-content-md-end mt-4">
+            <a href="{% if form.instance.id %}{% url 'event-detail' form.instance.id %}{% else %}{% url 'event-list' %}{% endif %}" 
+               class="btn btn-secondary me-md-2">Cancel</a>
+            <button type="submit" class="btn btn-primary">
+                {% if form.instance.id %}Update{% else %}Create{% endif %} Event
+            </button>
+        </div>
+    </form>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/js/select2.min.js"></script>
+<script>
+$(document).ready(function() {
+    // Initialize select2
+    $('select').select2({
+        theme: 'bootstrap-5',
+        width: '100%'
+    });
+    
+    // Show/hide recurrence options
+    const isRecurring = {{ form.instance.id|yesno:'true,false' }} || {{ form.recurrence_rule.value|default:'false'|lower }};
+    if (isRecurring) {
+        $('#is_recurring').prop('checked', true);
+        $('#recurrenceOptions').show();
+    }
+    
+    $('#is_recurring').change(function() {
+        if ($(this).is(':checked')) {
+            $('#recurrenceOptions').slideDown();
+        } else {
+            $('#recurrenceOptions').slideUp();
+        }
+    });
+    
+    // Show/hide weekly options based on frequency
+    function toggleWeeklyOptions() {
+        if ($('#id_frequency').val() === 'WEEKLY') {
+            $('#weeklyOptions').show();
+        } else {
+            $('#weeklyOptions').hide();
+        }
+    }
+    
+    // Initial check
+    toggleWeeklyOptions();
+    
+    // On frequency change
+    $('#id_frequency').change(function() {
+        toggleWeeklyOptions();
+    });
+    
+    // Set default end time to 1 hour after start time
+    $('#id_start_time').change(function() {
+        const startTime = new Date($(this).val());
+        if (startTime && !$('#id_end_time').val()) {
+            startTime.setHours(startTime.getHours() + 1);
+            const endTimeStr = startTime.toISOString().slice(0, 16);
+            $('#id_end_time').val(endTimeStr);
+        }
+    });
+    
+    // Pre-fill date from URL parameter
+    const urlParams = new URLSearchParams(window.location.search);
+    const dateParam = urlParams.get('date');
+    if (dateParam && !$('#id_start_time').val()) {
+        $('#id_start_time').val(dateParam + 'T12:00');
+        const endDate = new Date(dateParam + 'T13:00');
+        $('#id_end_time').val(endDate.toISOString().slice(0, 16));
+    }
+});
+</script>
+{% endblock %}
