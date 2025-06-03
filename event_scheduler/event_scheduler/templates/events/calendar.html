@@ -10,6 +10,17 @@
     }
     .fc-event {
         cursor: pointer;
+        padding: 2px 4px;
+        border-radius: 4px;
+    }
+    .event-details p {
+        margin-bottom: 0.5rem;
+    }
+    .fc-event-time {
+        font-weight: bold;
+    }
+    .fc-event-title {
+        margin-left: 4px;
     }
 </style>
 {% endblock %}
@@ -17,7 +28,7 @@
 {% block content %}
 <div class="d-flex justify-content-between align-items-center mb-4">
     <h2>Calendar View</h2>
-    <a href="{% url 'event-create' %}" class="btn btn-primary">Create New Event</a>
+    <a href="{% url 'events:event-create' %}" class="btn btn-primary">Create New Event</a>
 </div>
 
 <div id="calendar"></div>
@@ -31,7 +42,12 @@
                 <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
             </div>
             <div class="modal-body" id="eventModalBody">
-                Loading...
+                <div class="event-details">
+                    <div class="spinner-border text-primary" role="status">
+                        <span class="visually-hidden">Loading...</span>
+                    </div>
+                    <span class="ms-2">Loading event details...</span>
+                </div>
             </div>
             <div class="modal-footer">
                 <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
@@ -45,15 +61,26 @@
 {% block extra_js %}
 <script>
 document.addEventListener('DOMContentLoaded', function() {
-    var calendarEl = document.getElementById('calendar');
-    var calendar = new FullCalendar.Calendar(calendarEl, {
+    const calendarEl = document.getElementById('calendar');
+    const calendar = new FullCalendar.Calendar(calendarEl, {
         initialView: 'dayGridMonth',
         headerToolbar: {
             left: 'prev,next today',
             center: 'title',
             right: 'dayGridMonth,timeGridWeek,timeGridDay'
         },
-        events: '/api/events/',
+        events: {
+            url: '/api/events/',
+            method: 'GET',
+            failure: function() {
+                console.error('Failed to fetch events from /api/events/');
+                // Show error to user
+                const errorDiv = document.createElement('div');
+                errorDiv.className = 'alert alert-danger';
+                errorDiv.textContent = 'Failed to load events. Please refresh the page.';
+                document.getElementById('calendar').prepend(errorDiv);
+            }
+        },
         eventTimeFormat: { 
             hour: '2-digit',
             minute: '2-digit',
@@ -66,36 +93,76 @@ document.addEventListener('DOMContentLoaded', function() {
             const modalBody = document.getElementById('eventModalBody');
             const editBtn = document.getElementById('editEventBtn');
             
-            // Set modal title and content
-            modalTitle.textContent = event.title;
-            
-            // Format date and time
-            const start = new Date(event.start);
-            const end = event.end ? new Date(event.end) : null;
-            
-            let eventDetails = `
-                <p><strong>Start:</strong> ${start.toLocaleString()}</p>
+            // Show loading state
+            modalTitle.textContent = 'Loading...';
+            modalBody.innerHTML = `
+                <div class="event-details">
+                    <div class="spinner-border text-primary" role="status">
+                        <span class="visually-hidden">Loading...</span>
+                    </div>
+                    <span class="ms-2">Loading event details...</span>
+                </div>
             `;
             
-            if (end) {
-                eventDetails += `<p><strong>End:</strong> ${end.toLocaleString()}</p>`;
-            }
-            
-            if (event.extendedProps.description) {
-                eventDetails += `<p><strong>Description:</strong> ${event.extendedProps.description}</p>`;
-            }
-            
-            if (event.extendedProps.recurrence_rule) {
-                eventDetails += `<p><strong>Recurrence:</strong> ${event.extendedProps.recurrence_rule}</p>`;
-            }
-            
-            modalBody.innerHTML = eventDetails;
-            
-            // Set edit button link
-            editBtn.href = `/events/${event.id}/edit/`;
-            
-            // Show modal
+            // Show modal immediately
             modal.show();
+            
+            // Fetch event details from the template view
+            fetch(`/events/${event.id}/`)
+                .then(response => {
+                    if (!response.ok) {
+                        throw new Error('Event not found');
+                    }
+                    return response.text();
+                })
+                .then(html => {
+                    // Create a temporary element to parse the HTML
+                    const temp = document.createElement('div');
+                    temp.innerHTML = html;
+                    
+                    // Extract the event content from the detail page
+                    const eventContent = temp.querySelector('.event-content') || temp;
+                    if (eventContent) {
+                        modalBody.innerHTML = eventContent.innerHTML;
+                    } else {
+                        // Fallback to basic info
+                        const start = event.start ? new Date(event.start) : null;
+                        const end = event.end ? new Date(event.end) : null;
+                        
+                        let eventDetails = `
+                            <div class="event-details">
+                                <h5>${event.title || 'No Title'}</h5>
+                                ${start ? `<p><strong>Start:</strong> ${start.toLocaleString()}</p>` : ''}
+                                ${end ? `<p><strong>End:</strong> ${end.toLocaleString()}</p>` : ''}
+                                ${event.extendedProps.description ? 
+                                    `<p><strong>Description:</strong> ${event.extendedProps.description}</p>` : ''}
+                            </div>
+                        `;
+                        modalBody.innerHTML = eventDetails;
+                    }
+                    
+                    // Update modal title
+                    modalTitle.textContent = event.title || 'Event Details';
+                    
+                    // Set edit button link if event has an ID
+                    if (event.id) {
+                        editBtn.href = `/events/${event.id}/edit/`;
+                        editBtn.style.display = 'inline-block';
+                    } else {
+                        editBtn.style.display = 'none';
+                    }
+                })
+                .catch(error => {
+                    console.error('Error loading event:', error);
+                    modalTitle.textContent = 'Error';
+                    modalBody.innerHTML = `
+                        <div class="alert alert-danger">
+                            Could not load event details. Please try again.
+                        </div>
+                        <p>Error: ${error.message}</p>
+                    `;
+                    editBtn.style.display = 'none';
+                });
             
             // Prevent default behavior
             info.jsEvent.preventDefault();
@@ -103,10 +170,52 @@ document.addEventListener('DOMContentLoaded', function() {
         dateClick: function(info) {
             // Navigate to create event with pre-filled date
             window.location.href = `/events/create/?date=${info.dateStr}`;
+        },
+        eventContent: function(arg) {
+            // Customize event display
+            const event = arg.event;
+            const timeText = event.start ? 
+                event.start.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'}) : 
+                (event.allDay ? 'All Day' : '');
+            const title = event.title || 'No title';
+            
+            const container = document.createElement('div');
+            container.className = 'fc-event-main d-flex align-items-center';
+            container.innerHTML = `
+                ${timeText ? `<div class="fc-event-time">${timeText}</div>` : ''}
+                <div class="fc-event-title">${title}</div>
+            `;
+            
+            return { domNodes: [container] };
+        },
+        loading: function(isLoading) {
+            if (isLoading) {
+                // Show loading indicator
+                const loadingDiv = document.createElement('div');
+                loadingDiv.className = 'fc-loading';
+                loadingDiv.innerHTML = 'Loading events...';
+                calendarEl.appendChild(loadingDiv);
+            } else {
+                // Remove loading indicator
+                const loadingEl = calendarEl.querySelector('.fc-loading');
+                if (loadingEl) {
+                    loadingEl.remove();
+                }
+            }
         }
     });
 
     calendar.render();
+    
+    // Debug: Log when events are loaded
+    calendar.on('eventsSet', function(info) {
+        console.log('Events loaded:', info);
+    });
+    
+    // Debug: Log any errors
+    calendar.on('eventSourceError', function(error) {
+        console.error('Event source error:', error);
+    });
 });
 </script>
 {% endblock %}

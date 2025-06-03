@@ -3,6 +3,7 @@ from django.views.generic import ListView, DetailView, CreateView, UpdateView, D
 from django.urls import reverse_lazy, reverse
 from django.contrib.auth.mixins import LoginRequiredMixin
 from django.contrib import messages
+from django.contrib.auth import login
 from django.contrib.auth.decorators import login_required
 from django.http import JsonResponse, HttpResponseRedirect
 from django.views.decorators.http import require_http_methods
@@ -14,7 +15,7 @@ from rest_framework.decorators import action
 from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated
 from .models import Event, EventInstance
-from .forms import EventForm
+from .forms import EventForm, SignUpForm
 from .serializers import EventSerializer, EventInstanceSerializer
 
 # REST API Views
@@ -24,22 +25,24 @@ class EventViewSet(viewsets.ModelViewSet):
     permission_classes = [IsAuthenticated]
 
     def get_queryset(self):
-        queryset = Event.objects.filter(user=self.request.user)
+        queryset = super().get_queryset()
+        queryset = queryset.filter(user=self.request.user)
         start = self.request.query_params.get('start')
         end = self.request.query_params.get('end')
         if start and end:
             queryset = queryset.filter(
-                start_time__lte=end,
-                end_time__gte=start
+                start_datetime__lte=end,
+                end_datetime__gte=start
             ) | queryset.filter(
-                instances__start_time__lte=end,
-                instances__end_time__gte=start,
+                instances__start_datetime__lte=end,
+                instances__end_datetime__gte=start,
                 instances__is_cancelled=False
             )
-        return queryset.order_by('start_time')
+        return queryset.order_by('start_datetime')
 
     def perform_create(self, serializer):
-        serializer.save(user=self.request.user)
+        # The user is already set in the serializer's create method
+        serializer.save()
 
     @action(detail=True, methods=['post'])
     def cancel_instance(self, request, pk=None):
@@ -60,7 +63,7 @@ class EventListView(LoginRequiredMixin, ListView):
     paginate_by = 10
     
     def get_queryset(self):
-        return Event.objects.filter(user=self.request.user).order_by('-start_time')
+        return Event.objects.filter(user=self.request.user).order_by('-start_datetime')
 
 class EventDetailView(LoginRequiredMixin, DetailView):
     model = Event
@@ -82,7 +85,7 @@ class EventCreateView(LoginRequiredMixin, CreateView):
         return response
     
     def get_success_url(self):
-        return reverse('event-detail', kwargs={'pk': self.object.pk})
+        return reverse('events:event-detail', kwargs={'pk': self.object.pk})
 
 class EventUpdateView(LoginRequiredMixin, UpdateView):
     model = Event
@@ -98,12 +101,12 @@ class EventUpdateView(LoginRequiredMixin, UpdateView):
         return response
     
     def get_success_url(self):
-        return reverse('event-detail', kwargs={'pk': self.object.pk})
+        return reverse('events:event-detail', kwargs={'pk': self.object.pk})
 
 class EventDeleteView(LoginRequiredMixin, DeleteView):
     model = Event
     template_name = 'events/event_confirm_delete.html'
-    success_url = reverse_lazy('event-list')
+    success_url = reverse_lazy('events:event-list')
     
     def get_queryset(self):
         return Event.objects.filter(user=self.request.user)
@@ -120,13 +123,13 @@ class CalendarView(LoginRequiredMixin, View):
 def event_instances(request, event_id):
     event = get_object_or_404(Event, id=event_id, user=request.user)
     instances = event.instances.filter(
-        start_time__gte=timezone.now()
-    ).order_by('start_time')[:50]  # Limit to next 50 instances
+        start_datetime__gte=timezone.now()
+    ).order_by('start_datetime')[:50]  # Limit to next 50 instances
     
     data = [{
         'id': instance.id,
-        'start_time': instance.start_time.isoformat(),
-        'end_time': instance.end_time.isoformat(),
+        'start_datetime': instance.start_datetime.isoformat(),
+        'end_datetime': instance.end_datetime.isoformat(),
         'is_cancelled': instance.is_cancelled
     } for instance in instances]
     
@@ -143,3 +146,14 @@ def cancel_instance(request, instance_id):
     instance.is_cancelled = True
     instance.save()
     return JsonResponse({'status': 'success'})
+
+def signup(request):
+    if request.method == 'POST':
+        form = SignUpForm(request.POST)
+        if form.is_valid():
+            user = form.save()
+            login(request, user)
+            return redirect('event-calendar')  # Redirect to calendar after signup
+    else:
+        form = SignUpForm()
+    return render(request, 'registration/signup.html', {'form': form})

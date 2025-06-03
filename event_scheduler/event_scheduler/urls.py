@@ -14,7 +14,8 @@ from events.views import (
     EventDeleteView,
     CalendarView,
     event_instances,
-    cancel_instance
+    cancel_instance,
+    signup
 )
 
 # Swagger imports
@@ -22,6 +23,7 @@ from rest_framework.schemas import get_schema_view
 from drf_yasg.views import get_schema_view as get_yasg_schema_view
 from drf_yasg import openapi
 from django.http import JsonResponse
+from event_scheduler.views import HomeView
 
 router = DefaultRouter()
 router.register(r'events', EventViewSet)
@@ -46,7 +48,7 @@ template_urls = [
     path('events/<int:pk>/', EventDetailView.as_view(), name='event-detail'),
     path('events/<int:pk>/edit/', EventUpdateView.as_view(), name='event-update'),
     path('events/<int:pk>/delete/', EventDeleteView.as_view(), name='event-delete'),
-    path('calendar/', CalendarView.as_view(), name='event-calendar'),
+    # path('calendar/', CalendarView.as_view(), name='event-calendar'),
     path('events/<int:event_id>/instances/', event_instances, name='event-instances'),
     path('api/events/instance/<int:instance_id>/cancel/', cancel_instance, name='cancel-instance'),
 ]
@@ -55,7 +57,7 @@ template_urls = [
 auth_urls = [
     path('login/', auth_views.LoginView.as_view(template_name='registration/login.html'), name='login'),
     path('logout/', auth_views.LogoutView.as_view(next_page='login'), name='logout'),
-    path('signup/', include('django.contrib.auth.urls')),  # This includes signup view if using Django's built-in
+    path('signup/', signup, name='signup'),
 ]
 
 urlpatterns = [
@@ -63,12 +65,15 @@ urlpatterns = [
     
     # API URLs
     path('', HomeView.as_view(), name='home'),
+    path('events/', EventListView.as_view(), name='event-list'),
+    path('calendar/', CalendarView.as_view(), name='event-calendar'),
     path('admin/', admin.site.urls),
     path('accounts/', include('django.contrib.auth.urls')),
     path('api/', include(router.urls)),
     path('api/token/', TokenObtainPairView.as_view(), name='token_obtain_pair'),
     path('api/token/refresh/', TokenRefreshView.as_view(), name='token_refresh'),
     path('api-auth/', include('rest_framework.urls', namespace='rest_framework')),
+    path('api/events/', include(router.urls)),
     
     # Documentation
     path('swagger/', schema_view.with_ui('swagger', cache_timeout=0), name='schema-swagger-ui'),
